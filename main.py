@@ -29,32 +29,59 @@ def validate_entry(text: str) -> int:
     assert "  " not in text, "entry must not contain double spaces"
     assert 1 <= len(text) <= 200, "entry must be 1-200 characters"
     assert text.strip(), "entry must not be only whitespace"
+    # len() on a Python str counts Unicode code points, so it is already
+    # correct for non-ASCII text; reject control characters explicitly
+    # instead of relying on that count alone. A plain space is printable,
+    # so isprintable() covers the whole string with no exception needed.
+    assert text.isprintable(), "entry must not contain control characters"
     return len(text)
 
 
+def validation_report(text: str) -> dict:
+    """Return the validation report for the review."""
+    count = validate_entry(text)
+    return {"characters": count, "printable": text.isprintable()}
+
+
 def write_entry(text: str) -> str:
-    """Write the review to /output/entry.txt, with a local fallback."""
+    """Write the review to /output/entry.txt, with a local fallback.
+
+    Tries each candidate path in order and records every failure, so a
+    failure to write anywhere reports both paths that were attempted
+    instead of silently swallowing the first error.
+    """
     import os
 
-    for path in ("/output/entry.txt", "output/entry.txt"):
+    candidates = ("/output/entry.txt", "output/entry.txt")
+    errors = []
+    for path in candidates:
         try:
             os.makedirs(os.path.dirname(path), exist_ok=True)
             with open(path, "w", encoding="utf-8") as f:
                 f.write(text)
             return path
-        except OSError:
+        except OSError as exc:
+            errors.append(f"{path}: {exc}")
             continue
-    raise OSError("could not write entry.txt to /output or output/")
+    tried = "; ".join(errors)
+    raise OSError(
+        "could not write entry.txt to either of the tried paths "
+        f"(/output/entry.txt, output/entry.txt) — {tried}"
+    )
 
 
 def main() -> None:
-    count = validate_entry(ENTRY)
+    report = validation_report(ENTRY)
+    count = report["characters"]
     path = write_entry(ENTRY)
     with open(path, encoding="utf-8") as f:
         written = f.read()
     assert written == ENTRY, "written entry does not match ENTRY exactly"
     print(ENTRY)
-    print(f"wrote {count} characters to {path} (valid: 1-200 chars, single line)")
+    print(
+        f"wrote {count} characters to {path} "
+        f"(valid: 1-200 chars, single line, printable={report['printable']})"
+    )
 
 
 if __name__ == "__main__":
